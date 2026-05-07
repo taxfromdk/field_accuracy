@@ -187,7 +187,7 @@
         </div>
         <div class="canvas-container">
             <canvas id="field-canvas" width="1288" height="980"></canvas>
-            <canvas id="triangle-canvas" width="1680" height="480"></canvas>
+            <canvas id="triangle-canvas" width="1680" height="520"></canvas>
         </div>
     </div>
 
@@ -807,8 +807,8 @@
             const dy = fieldPositions.B.y - fieldPositions.A.y;
             const abDistance = Math.sqrt(dx * dx + dy * dy);
 
-            const margin = 56;
-            const baseY = 360;
+            const margin = 100;
+            const baseY = 390;
             const scale = getScale();
             const abPx = abDistance * scale;
             const heightPx = currentHeight * scale;
