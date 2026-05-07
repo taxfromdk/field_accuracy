@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soccer Field — Delaunay Triangulation</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  h1 {
+    font-weight: 500;
+    font-size: 20px;
+    margin: 0 0 16px;
+  }
+  .field-wrap {
+    max-width: 1100px;
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #333;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #2d7a3e;
+    cursor: crosshair;
+  }
+  #hover-info {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #888;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+  <h1>Soccer field — Delaunay triangulation of keypoints</h1>
+  <div class="field-wrap">
+    <canvas id="pitch" width="1050" height="680"></canvas>
+  </div>
+  <div id="hover-info">Hover the pitch to highlight a triangle.</div>
+
+<script>
+(function () {
+  // ---------- Inline Bowyer–Watson Delaunay triangulation ----------
+  function triangulate(pts) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of pts) {
+      if (x < minX) minX = x; if (y < minY) minY = y;
+      if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+    }
+    const dx = maxX - minX, dy = maxY - minY;
+    const dmax = Math.max(dx, dy) * 20;
+    const midx = (minX + maxX) / 2, midy = (minY + maxY) / 2;
+    const sp = [
+      [midx - dmax, midy - dmax],
+      [midx + dmax, midy - dmax],
+      [midx, midy + dmax],
+    ];
+    const allPts = pts.concat(sp);
+    const N = pts.length;
+    const sIdx = [N, N + 1, N + 2];
+
+    function makeTri(i, j, k) {
+      const ax = allPts[i][0], ay = allPts[i][1];
+      const bx = allPts[j][0], by = allPts[j][1];
+      const cx = allPts[k][0], cy = allPts[k][1];
+      const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+      const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+      const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+      const r2 = (ax - ux) * (ax - ux) + (ay - uy) * (ay - uy);
+      return [i, j, k, ux, uy, r2];
+    }
+
+    let tris = [makeTri(sIdx[0], sIdx[1], sIdx[2])];
+
+    for (let p = 0; p < N; p++) {
+      const [px, py] = allPts[p];
+      const bad = [];
+      for (let t = 0; t < tris.length; t++) {
+        const [, , , cx, cy, r2] = tris[t];
+        if ((px - cx) * (px - cx) + (py - cy) * (py - cy) < r2) bad.push(t);
+      }
+      const edges = [];
+      for (const t of bad) {
+        const [i, j, k] = tris[t];
+        edges.push([i, j], [j, k], [k, i]);
+      }
+      const boundary = [];
+      for (let a = 0; a < edges.length; a++) {
+        let shared = false;
+        for (let b = 0; b < edges.length; b++) {
+          if (a === b) continue;
+          if ((edges[a][0] === edges[b][1] && edges[a][1] === edges[b][0]) ||
+              (edges[a][0] === edges[b][0] && edges[a][1] === edges[b][1])) {
+            shared = true; break;
+          }
+        }
+        if (!shared) boundary.push(edges[a]);
+      }
+      bad.sort((a, b) => b - a);
+      for (const t of bad) tris.splice(t, 1);
+      for (const [i, j] of boundary) tris.push(makeTri(i, j, p));
+    }
+
+    const result = [];
+    for (const t of tris) {
+      if (t[0] < N && t[1] < N && t[2] < N) result.push([t[0], t[1], t[2]]);
+    }
+    return result;
+  }
+
+  // ---------- Pitch geometry (FIFA spec, 10 px / metre) ----------
+  const canvas = document.getElementById('pitch');
+  const ctx = canvas.getContext('2d');
+  const info = document.getElementById('hover-info');
+  const S = 10, W = 1050, H = 680;
+  const cy = H / 2;
+  const left = S, right = W - S;
+  const paW = 16.5 * S, paH = 40.32 * S;
+  const gaW = 5.5 * S, gaH = 18.32 * S;
+  const goalH = 7.32 * S;
+  const r = 9.15 * S;
+  const dyArc = Math.sqrt(r * r - (paW - 11 * S) * (paW - 11 * S));
+  const arcAng = Math.acos((paW - 11 * S) / r);
+
+  const LW_LINE = 6;
+  const LW_MESH = 1.5;
+
+  // ---------- Keypoints ----------
+  const points = [
+    // 4 field corners
+    [left, S], [right, S], [left, H - S], [right, H - S],
+    // halfway line ends
+    [W / 2, S], [W / 2, H - S],
+    // centre spot + centre-circle / halfway-line intersections
+    [W / 2, cy],
+    [W / 2, cy - r], [W / 2, cy + r],
+    // ---- left end ----
+    [left, cy - paH / 2], [left, cy + paH / 2],
+    [left + paW, cy - paH / 2], [left + paW, cy + paH / 2],
+    [left, cy - gaH / 2], [left, cy + gaH / 2],
+    [left + gaW, cy - gaH / 2], [left + gaW, cy + gaH / 2],
+    [left, cy - goalH / 2], [left, cy + goalH / 2],
+    [left + 11 * S, cy],
+    [left + paW, cy - dyArc], [left + paW, cy + dyArc],
+    // ---- right end ----
+    [right, cy - paH / 2], [right, cy + paH / 2],
+    [right - paW, cy - paH / 2], [right - paW, cy + paH / 2],
+    [right, cy - gaH / 2], [right, cy + gaH / 2],
+    [right - gaW, cy - gaH / 2], [right - gaW, cy + gaH / 2],
+    [right, cy - goalH / 2], [right, cy + goalH / 2],
+    [right - 11 * S, cy],
+    [right - paW, cy - dyArc], [right - paW, cy + dyArc],
+  ];
+
+  const triangles = triangulate(points);
+
+  // ---------- Drawing ----------
+  function drawPitch() {
+    ctx.fillStyle = '#2d7a3e';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = LW_LINE;
+    ctx.strokeRect(S, S, W - 2 * S, H - 2 * S);
+    ctx.beginPath(); ctx.moveTo(W / 2, S); ctx.lineTo(W / 2, H - S); ctx.stroke();
+    ctx.beginPath(); ctx.arc(W / 2, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(W / 2, cy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeRect(S, cy - paH / 2, paW, paH);
+    ctx.strokeRect(S, cy - gaH / 2, gaW, gaH);
+    ctx.beginPath(); ctx.arc(S + 11 * S, cy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(S + 11 * S, cy, r, -arcAng, arcAng); ctx.stroke();
+    ctx.strokeRect(S - 2 * S, cy - goalH / 2, 2 * S, goalH);
+    ctx.strokeRect(right - paW, cy - paH / 2, paW, paH);
+    ctx.strokeRect(right - gaW, cy - gaH / 2, gaW, gaH);
+    ctx.beginPath(); ctx.arc(right - 11 * S, cy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(right - 11 * S, cy, r, Math.PI - arcAng, Math.PI + arcAng); ctx.stroke();
+    ctx.strokeRect(right, cy - goalH / 2, 2 * S, goalH);
+    ctx.beginPath(); ctx.arc(S, S, S, 0, Math.PI / 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(right, S, S, Math.PI / 2, Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(right, H - S, S, Math.PI, 1.5 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(S, H - S, S, 1.5 * Math.PI, 2 * Math.PI); ctx.stroke();
+  }
+
+  function drawMesh(hoverIdx) {
+    ctx.strokeStyle = '#0a1f4a';
+    ctx.lineWidth = LW_MESH;
+    for (const t of triangles) {
+      ctx.beginPath();
+      ctx.moveTo(points[t[0]][0], points[t[0]][1]);
+      ctx.lineTo(points[t[1]][0], points[t[1]][1]);
+      ctx.lineTo(points[t[2]][0], points[t[2]][1]);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    if (hoverIdx >= 0) {
+      const t = triangles[hoverIdx];
+      ctx.fillStyle = 'rgba(255, 230, 80, 0.75)';
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(points[t[0]][0], points[t[0]][1]);
+      ctx.lineTo(points[t[1]][0], points[t[1]][1]);
+      ctx.lineTo(points[t[2]][0], points[t[2]][1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  function drawKeypoints() {
+    ctx.fillStyle = '#ff7a1a';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    for (const [x, y] of points) {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  function render(hoverIdx) {
+    drawPitch();
+    drawMesh(hoverIdx);
+    drawKeypoints();
+  }
+
+  // ---------- Hover detection ----------
+  function pointInTri(px, py, a, b, c) {
+    const d1 = (px - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (py - b[1]);
+    const d2 = (px - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (py - c[1]);
+    const d3 = (px - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (py - a[1]);
+    const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+    const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(hasNeg && hasPos);
+  }
+  function findTri(px, py) {
+    for (let i = 0; i < triangles.length; i++) {
+      const t = triangles[i];
+      if (pointInTri(px, py, points[t[0]], points[t[1]], points[t[2]])) return i;
+    }
+    return -1;
+  }
+
+  let currentHover = -1;
+  render(-1);
+  info.textContent = triangles.length + ' triangles. Hover the pitch to highlight one.';
+
+  canvas.addEventListener('mousemove', function (e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const idx = findTri(x, y);
+    if (idx !== currentHover) {
+      currentHover = idx;
+      render(idx);
+      if (idx === -1) {
+        info.textContent = 'Outside the triangulation.';
+      } else {
+        const t = triangles[idx];
+        const toM = p => '(' + ((p[0] - S) / S).toFixed(1) + ', ' + ((p[1] - S) / S).toFixed(1) + ')';
+        info.textContent = 'Triangle ' + idx + ' — ' + toM(points[t[0]]) + ', ' + toM(points[t[1]]) + ', ' + toM(points[t[2]]);
+      }
+    }
+  });
+
+  canvas.addEventListener('mouseleave', function () {
+    currentHover = -1;
+    render(-1);
+    info.textContent = triangles.length + ' triangles. Hover the pitch to highlight one.';
+  });
+})();
+</script>
+</body>
+</html>
