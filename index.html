@@ -497,8 +497,8 @@
         }
 
         function drawBasketballMarkings(ctx, ox, oy, w, h, scale) {
-            // FIBA basketball court markings (28m x 15m)
-            // Reference: Court is displayed with baselines on left/right, sidelines on top/bottom
+            // FIBA basketball court (28m x 15m)
+            // Display: baselines left/right, sidelines top/bottom
             ctx.strokeStyle = '#fff';
             ctx.fillStyle = '#fff';
             ctx.lineWidth = 3;
@@ -506,157 +506,165 @@
             const centerX = ox + w / 2;
             const centerY = oy + h / 2;
 
-            // Center line (half-court line)
+            // FIBA dimensions in meters
+            const BASKET_FROM_BASELINE = 1.575;
+            const KEY_WIDTH = 4.9;
+            const KEY_DEPTH = 5.8;
+            const THREE_POINT_RADIUS = 6.75;
+            const CORNER_FROM_SIDELINE = 0.9;  // corner 3pt line distance from sideline
+            const RESTRICTED_RADIUS = 1.25;
+            const BACKBOARD_FROM_BASELINE = 1.2;
+            const BACKBOARD_WIDTH = 1.8;
+            const HOOP_RADIUS = 0.225;
+            const FT_CIRCLE_RADIUS = 1.8;
+
+            // Court half-width = 7.5m, corner line is at 7.5 - 0.9 = 6.6m from center
+            const CORNER_FROM_CENTER = 7.5 - CORNER_FROM_SIDELINE; // 6.6m
+
+            // Center line
             ctx.beginPath();
             ctx.moveTo(centerX, oy);
             ctx.lineTo(centerX, oy + h);
             ctx.stroke();
 
-            // Center circle (1.8m radius)
-            const centerCircleR = 1.8 * scale;
+            // Center circle
             ctx.beginPath();
-            ctx.arc(centerX, centerY, centerCircleR, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, FT_CIRCLE_RADIUS * scale, 0, Math.PI * 2);
             ctx.stroke();
-
-            // FIBA dimensions
-            const basketFromBaseline = 1.575; // meters - center of hoop from baseline
-            const keyWidth = 4.9;             // meters - width of paint/key
-            const keyDepth = 5.8;             // meters - from baseline to free throw line
-            const threePointRadius = 6.75;    // meters - from center of basket
-            const cornerThreeDist = 0.9;      // meters - corner three from sideline
-            const restrictedRadius = 1.25;    // meters - no-charge semicircle
-            const backboardFromBaseline = 1.2;// meters
-            const backboardWidth = 1.8;       // meters
-            const hoopRadius = 0.225;         // meters (45cm diameter)
-            const ftCircleRadius = 1.8;       // meters
-
-            // Convert to pixels
-            const basketX = basketFromBaseline * scale;
-            const keyW = keyWidth * scale;
-            const keyD = keyDepth * scale;
-            const threeR = threePointRadius * scale;
-            const cornerDist = cornerThreeDist * scale;
-            const restrictedR = restrictedRadius * scale;
-            const backboardX = backboardFromBaseline * scale;
-            const backboardW = backboardWidth * scale;
-            const hoopR = hoopRadius * scale;
-            const ftCircleR = ftCircleRadius * scale;
 
             // ===== LEFT SIDE =====
-            const leftBasketCenterX = ox + basketX;
+            const leftBasketX = ox + BASKET_FROM_BASELINE * scale;
 
-            // Paint/Key area (rectangle from baseline)
+            // Key/Paint area
+            const keyW = KEY_WIDTH * scale;
+            const keyD = KEY_DEPTH * scale;
             ctx.strokeRect(ox, centerY - keyW / 2, keyD, keyW);
 
-            // Free throw circle (at end of key)
-            // Full circle, but only the part outside the key is typically visible
+            // Free throw semicircle (outside the key)
+            const ftR = FT_CIRCLE_RADIUS * scale;
             ctx.beginPath();
-            ctx.arc(ox + keyD, centerY, ftCircleR, 0, Math.PI * 2);
+            ctx.arc(ox + keyD, centerY, ftR, -Math.PI / 2, Math.PI / 2);
             ctx.stroke();
+            // Dashed part inside key (optional, often shown dashed)
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            ctx.arc(ox + keyD, centerY, ftR, Math.PI / 2, -Math.PI / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
 
             // Three-point line
-            // Corner sections are straight lines parallel to sideline, 0.9m from sideline
-            // Arc connects them, centered on basket
+            const threeR = THREE_POINT_RADIUS * scale;
+            const cornerY_top = oy + CORNER_FROM_SIDELINE * scale;      // 0.9m from top
+            const cornerY_bot = oy + h - CORNER_FROM_SIDELINE * scale;  // 0.9m from bottom
 
-            // Calculate where arc meets the corner line (0.9m from sideline)
-            // The corner line is at x = ox (baseline), distance from basket center
-            // Arc equation: distance from basket = 6.75m
-            // At the baseline, we need to find y where the arc would be
-            const arcStartX = ox + cornerDist; // Where straight line would meet arc
-            // Distance from basket to this x position
-            const dxFromBasket = cornerDist - basketFromBaseline;
-            // Calculate y offset using Pythagorean theorem
-            const arcMeetY = Math.sqrt(threeR * threeR - dxFromBasket * dxFromBasket);
+            // Distance from basket center to corner line (in y direction)
+            const dyCorner = CORNER_FROM_CENTER * scale; // 6.6m
 
-            // Top corner three (straight line from baseline to arc)
+            // Where does arc meet corner line? Solve: dx² + dy² = R²
+            // dx = sqrt(R² - dy²) = sqrt(6.75² - 6.6²) = sqrt(2.0025) ≈ 1.415m
+            const dxArcMeet = Math.sqrt(THREE_POINT_RADIUS * THREE_POINT_RADIUS -
+                                        CORNER_FROM_CENTER * CORNER_FROM_CENTER) * scale;
+            const arcMeetX = leftBasketX + dxArcMeet;
+
+            // Top corner three: horizontal line from baseline to arc
             ctx.beginPath();
-            ctx.moveTo(ox, centerY - arcMeetY);
-            ctx.lineTo(ox, oy); // to top sideline
+            ctx.moveTo(ox, cornerY_top);
+            ctx.lineTo(arcMeetX, cornerY_top);
             ctx.stroke();
 
-            // Bottom corner three
+            // Bottom corner three: horizontal line from baseline to arc
             ctx.beginPath();
-            ctx.moveTo(ox, centerY + arcMeetY);
-            ctx.lineTo(ox, oy + h); // to bottom sideline
+            ctx.moveTo(ox, cornerY_bot);
+            ctx.lineTo(arcMeetX, cornerY_bot);
             ctx.stroke();
 
-            // Three-point arc (from where it meets top corner to bottom corner)
-            const arcAngle = Math.asin(arcMeetY / threeR);
+            // Three-point arc (connects the two corner lines)
+            const arcAngle = Math.acos(dxArcMeet / threeR);
             ctx.beginPath();
-            ctx.arc(leftBasketCenterX, centerY, threeR, -arcAngle, arcAngle);
+            ctx.arc(leftBasketX, centerY, threeR, -arcAngle, arcAngle);
             ctx.stroke();
 
             // Restricted area (no-charge semicircle)
+            const restrictedR = RESTRICTED_RADIUS * scale;
             ctx.beginPath();
-            ctx.arc(leftBasketCenterX, centerY, restrictedR, -Math.PI / 2, Math.PI / 2);
+            ctx.arc(leftBasketX, centerY, restrictedR, -Math.PI / 2, Math.PI / 2);
             ctx.stroke();
-            // Close the restricted area with a line
             ctx.beginPath();
-            ctx.moveTo(leftBasketCenterX, centerY - restrictedR);
-            ctx.lineTo(leftBasketCenterX, centerY + restrictedR);
+            ctx.moveTo(leftBasketX, centerY - restrictedR);
+            ctx.lineTo(leftBasketX, centerY + restrictedR);
             ctx.stroke();
 
             // Backboard
+            const backboardX = ox + BACKBOARD_FROM_BASELINE * scale;
+            const backboardW = BACKBOARD_WIDTH * scale;
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(ox + backboardX, centerY - backboardW / 2);
-            ctx.lineTo(ox + backboardX, centerY + backboardW / 2);
+            ctx.moveTo(backboardX, centerY - backboardW / 2);
+            ctx.lineTo(backboardX, centerY + backboardW / 2);
             ctx.stroke();
             ctx.lineWidth = 3;
 
-            // Hoop (ring)
+            // Hoop
+            const hoopR = HOOP_RADIUS * scale;
             ctx.beginPath();
-            ctx.arc(leftBasketCenterX, centerY, hoopR, 0, Math.PI * 2);
+            ctx.arc(leftBasketX, centerY, hoopR, 0, Math.PI * 2);
             ctx.stroke();
 
             // ===== RIGHT SIDE (mirror) =====
-            const rightBasketCenterX = ox + w - basketX;
+            const rightBasketX = ox + w - BASKET_FROM_BASELINE * scale;
+            const rightArcMeetX = rightBasketX - dxArcMeet;
 
-            // Paint/Key area
+            // Key/Paint area
             ctx.strokeRect(ox + w - keyD, centerY - keyW / 2, keyD, keyW);
 
-            // Free throw circle
+            // Free throw semicircle
             ctx.beginPath();
-            ctx.arc(ox + w - keyD, centerY, ftCircleR, 0, Math.PI * 2);
+            ctx.arc(ox + w - keyD, centerY, ftR, Math.PI / 2, -Math.PI / 2);
             ctx.stroke();
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            ctx.arc(ox + w - keyD, centerY, ftR, -Math.PI / 2, Math.PI / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
 
             // Top corner three
             ctx.beginPath();
-            ctx.moveTo(ox + w, centerY - arcMeetY);
-            ctx.lineTo(ox + w, oy);
+            ctx.moveTo(ox + w, cornerY_top);
+            ctx.lineTo(rightArcMeetX, cornerY_top);
             ctx.stroke();
 
             // Bottom corner three
             ctx.beginPath();
-            ctx.moveTo(ox + w, centerY + arcMeetY);
-            ctx.lineTo(ox + w, oy + h);
+            ctx.moveTo(ox + w, cornerY_bot);
+            ctx.lineTo(rightArcMeetX, cornerY_bot);
             ctx.stroke();
 
             // Three-point arc
             ctx.beginPath();
-            ctx.arc(rightBasketCenterX, centerY, threeR, Math.PI - arcAngle, Math.PI + arcAngle);
+            ctx.arc(rightBasketX, centerY, threeR, Math.PI - arcAngle, Math.PI + arcAngle);
             ctx.stroke();
 
             // Restricted area
             ctx.beginPath();
-            ctx.arc(rightBasketCenterX, centerY, restrictedR, Math.PI / 2, Math.PI * 1.5);
+            ctx.arc(rightBasketX, centerY, restrictedR, Math.PI / 2, Math.PI * 1.5);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(rightBasketCenterX, centerY - restrictedR);
-            ctx.lineTo(rightBasketCenterX, centerY + restrictedR);
+            ctx.moveTo(rightBasketX, centerY - restrictedR);
+            ctx.lineTo(rightBasketX, centerY + restrictedR);
             ctx.stroke();
 
             // Backboard
+            const rightBackboardX = ox + w - BACKBOARD_FROM_BASELINE * scale;
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(ox + w - backboardX, centerY - backboardW / 2);
-            ctx.lineTo(ox + w - backboardX, centerY + backboardW / 2);
+            ctx.moveTo(rightBackboardX, centerY - backboardW / 2);
+            ctx.lineTo(rightBackboardX, centerY + backboardW / 2);
             ctx.stroke();
             ctx.lineWidth = 3;
 
             // Hoop
             ctx.beginPath();
-            ctx.arc(rightBasketCenterX, centerY, hoopR, 0, Math.PI * 2);
+            ctx.arc(rightBasketX, centerY, hoopR, 0, Math.PI * 2);
             ctx.stroke();
         }
 
